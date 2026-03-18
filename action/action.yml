@@ -1,0 +1,84 @@
+name: 'Carbonah Lint'
+description: 'Lint source code for carbon-inefficient patterns — N+1 queries, unbounded queries, dev-in-prod'
+author: 'Carbonah Contributors'
+
+branding:
+  icon: 'leaf'
+  color: 'green'
+
+inputs:
+  command:
+    description: 'Carbonah command to run (lint, analyse, measure)'
+    required: false
+    default: 'lint .'
+  fail-on:
+    description: 'Rule code to fail on (e.g. E002). Exit 1 if any matching finding.'
+    required: false
+  output:
+    description: 'Output format: text, json, sarif'
+    required: false
+    default: 'text'
+  upload-sarif:
+    description: 'Upload SARIF to GitHub Code Scanning (true/false)'
+    required: false
+    default: 'false'
+  version:
+    description: 'Carbonah version to install (default: latest)'
+    required: false
+    default: 'latest'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Carbonah
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        if [ "$VERSION" = "latest" ]; then
+          LATEST=$(curl -fsSL "https://api.github.com/repos/andrevanzuydam/carbonah-releases/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": "\(.*\)".*/\1/')
+          VERSION="$LATEST"
+        fi
+
+        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        ARCH="$(uname -m)"
+        case "$ARCH" in
+          x86_64|amd64) ARCH="x86_64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+        esac
+
+        ASSET="carbonah-${OS}-${ARCH}.tar.gz"
+        URL="https://github.com/andrevanzuydam/carbonah-releases/releases/download/${VERSION}/${ASSET}"
+
+        echo "Installing carbonah $VERSION ($OS-$ARCH)..."
+        curl -fsSL "$URL" -o /tmp/carbonah.tar.gz
+        tar -xzf /tmp/carbonah.tar.gz -C /tmp
+        sudo mv /tmp/carbonah /usr/local/bin/carbonah
+        chmod +x /usr/local/bin/carbonah
+        echo "Installed: $(carbonah --version)"
+
+    - name: Run Carbonah
+      shell: bash
+      run: |
+        ARGS="${{ inputs.command }}"
+
+        if [ -n "${{ inputs.fail-on }}" ]; then
+          ARGS="$ARGS --fail-on ${{ inputs.fail-on }}"
+        fi
+
+        if [ "${{ inputs.upload-sarif }}" = "true" ]; then
+          # Run with SARIF output to file
+          carbonah $ARGS --output sarif > /tmp/carbonah-results.sarif 2>&1 || true
+          # Also print text output
+          carbonah $ARGS --output text || true
+        elif [ "${{ inputs.output }}" != "text" ]; then
+          carbonah $ARGS --output ${{ inputs.output }}
+        else
+          carbonah $ARGS
+        fi
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: /tmp/carbonah-results.sarif
+        category: carbonah
