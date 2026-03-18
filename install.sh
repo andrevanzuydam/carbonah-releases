@@ -53,10 +53,12 @@ curl -fsSL "$URL" -o "$TMPDIR/carbonah.tar.gz"
 tar -xzf "$TMPDIR/carbonah.tar.gz" -C "$TMPDIR"
 
 # Install
+mkdir -p "$INSTALL_DIR" 2>/dev/null
 if [ -w "$INSTALL_DIR" ]; then
     cp "$TMPDIR/carbonah" "$INSTALL_DIR/carbonah"
 else
     echo "  Installing to $INSTALL_DIR (requires sudo)"
+    sudo mkdir -p "$INSTALL_DIR"
     sudo cp "$TMPDIR/carbonah" "$INSTALL_DIR/carbonah"
 fi
 
